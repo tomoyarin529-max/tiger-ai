@@ -186,7 +186,7 @@ target_win_rate = st.sidebar.slider(
 )
 
 # ==========================================
-# 📊 8. メイン実行ルーチン（完全フラット構造）
+# 📊 8. メイン実行ルーチン（当日実戦）
 # ==========================================
 if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRAコピペ）"]:
     st.write("⚙️ 一括丸投げ仕分け ＆ 全レースワイド3点 リアルタイムオッズ完全連動")
@@ -260,8 +260,6 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                         if win_rate >= target_win_rate:
                             h_num = int(float(n1))
                             h_name = top3.loc[0, '馬名']
-                            
-                            # 🚨 徹底追放：f文字列の中身を変数化して超安全に結合！
                             race_title = f"{track} {int(float(r))}R"
                             combos_str = f"{str12}\n{str13}\n{str23}"
                             honmei_str = f"{h_num}番 ({h_name}){win_odds_str}"
@@ -292,25 +290,30 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                     line_msg += f"★大本命: {r_honmei}\n🔥大穴単勝: {r_ana}\n----------------------------------\n"
                 if df_o is not None: send_horse_line(line_msg)
 
+# ==========================================
+# 📊 9. メイン実行ルーチン（過去データ一括検証）
+# ==========================================
 elif mode == "📊 過去データ一括検証・勝因分析":
     st.markdown("### 🏯 過去ビッグデータ一括格納・自動検証エンジン")
     archive_files = st.file_uploader("📋 過去のZIP/CSVアーカイブを一括ドロップ", type=["zip", "csv"], accept_multiple_files=True)
     
     if archive_files:
         with st.spinner("⏳ 膨大なデータを自動結合中..."):
-            df_m_horse, df_m_race, df_m_payback, df_m_odds = process_archive_files(archive_files)
+            # 🚨 修正：過去マスターデータの変数名を完全に防衛統一
+            df_h_master, df_r_master, df_p_master, df_o_master = process_archive_files(archive_files)
 
-        if df_m_horse is not None and df_m_payback is not None and df_m_odds is not None:
-            st.success(f"🟢 統合成功！馬データ {len(df_m_horse)}行 / オッズデータ {len(df_m_odds)}行")
+        if df_h_master is not None and df_p_master is not None and df_o_master is not None:
+            st.success(f"🟢 統合成功！馬データ {len(df_h_master)}行 / オッズデータ {len(df_o_master)}行")
             
             if st.button("⚔️ 過去データ検証作戦（バックテスト）を開始せよ！"):
                 backtest_results = []
-                df_wo_sub = df_m_odds[df_m_odds["賭式"] == "単勝"]
+                df_wo_sub = df_o_master[df_o_master["賭式"] == "単勝"]
                 df_win_odds = df_wo_sub[["競馬場", "競走年月日", "レース番号", "番号1", "オッズ"]].rename(columns={"番号1": "馬番", "オッズ": "リアルタイム単勝オッズ"})
-                df_m_horse = pd.merge(df_m_horse, df_win_odds, on=["競馬場", "競走年月日", "レース番号", "馬番"], how="left")
-                df_m_horse["AI勝率スコア"] = df_m_horse.apply(calc_true_ai_score, axis=1)
+                df_h_master = pd.merge(df_h_master, df_win_odds, on=["競馬場", "競走年月日", "レース番号", "馬番"], how="left")
+                df_h_master["AI勝率スコア"] = df_h_master.apply(calc_true_ai_score, axis=1)
                 
-                for (track, date, r), df_r_race in df_m_horse.groupby(["競馬場", "競走年月日", "レース番号"]):
+                # 🚨 修正：未定義変数 df_m_horse を df_h_master へ完全修正
+                for (track, date, r), df_r_race in df_h_master.groupby(["競馬場", "競走年月日", "レース番号"]):
                     if len(df_r_race) >= 3:
                         sorted_horses = df_r_race.sort_values(by="AI勝率スコア", ascending=False).reset_index(drop=True)
                         top3 = sorted_horses.head(3)
@@ -321,9 +324,10 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                         win_rate = max(55, min(97, int(avg_score * 0.78 + random.randint(-1, 2))))
                         
                         if win_rate >= target_win_rate:
-                            odds12 = get_wide_odds_float(df_m_odds, track, r, n1, n2, date=date)
-                            odds13 = get_wide_odds_float(df_m_odds, track, r, n1, n3, date=date)
-                            odds23 = get_wide_odds_float(df_m_odds, track, r, n2, n3, date=date)
+                            # 🚨 修正：未定義変数 df_m_odds を df_o_master へ完全修正
+                            odds12 = get_wide_odds_float(df_o_master, track, r, n1, n2, date=date)
+                            odds13 = get_wide_odds_float(df_o_master, track, r, n1, n3, date=date)
+                            odds23 = get_wide_odds_float(df_o_master, track, r, n2, n3, date=date)
                             
                             total_budget = 1000
                             amt12, amt13, amt23 = 100, 100, 100
@@ -336,7 +340,9 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                                 except: pass
                             
                             actual_bet = amt12 + amt13 + amt23
-                            df_pb = df_m_payback[(df_m_payback["競馬場"] == track) & (df_m_payback["競走年月日"] == date) & (df_m_payback["レース番号"] == int(float(r)))]
+                            
+                            # 🚨 修正：未定義変数 df_m_payback を df_p_master へ完全修正
+                            df_pb = df_p_master[(df_p_master["競馬場"] == track) & (df_p_master["競走年月日"] == date) & (df_p_master["レース番号"] == int(float(r)))]
                             payback_total, hit_count = 0, 0
                             
                             if not df_pb.empty:
@@ -365,23 +371,18 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                     total_profit = df_res["収支"].sum()
                     rec_rate = (total_payback / total_invest) * 100 if total_invest > 0 else 0
                     
-                    # 🚨 徹底追放：複雑な集計処理を完全にf文字列の外側に隔離！
-                    df_hit_any = df_res[df_res["的中数"] > 0]
-                    df_hit_triple = df_res[df_res["的中数"] == 3]
-                    any_hit_rate = (len(df_hit_any) / total_races) * 100
-                    triple_hit_rate = (len(df_hit_triple) / total_races) * 100
+                    # 🚨 徹底追放：f文字列の崩壊を引き起こしていた計算式を完全に外側へパージ！
+                    any_hit_count = len(df_res[df_res["的中数"] > 0])
+                    triple_hit_count = len(df_res[df_res["的中数"] == 3])
+                    any_hit_rate = (any_hit_count / total_races) * 100 if total_races > 0 else 0
+                    triple_hit_rate = (triple_hit_count / total_races) * 100 if total_races > 0 else 0
                     
                     st.markdown("### 🏆 検証作戦結果レポート")
                     st.markdown('<div class="gold-box">', unsafe_allow_html=True)
                     st.write(f"📊 **総厳選出撃レース数:** {total_races} レース")
                     st.write(f"💵 **総投資額:** {int(total_invest):,} 円")
                     st.write(f"💰 **総払戻金:** {int(total_payback):,} 円")
-                    
-                    if total_profit >= 0:
-                        st.write(f"📈 **トータル純利益:** +{int(total_profit):,} 円")
-                    else:
-                        st.write(f"📈 **トータル純損失:** {int(total_profit):,} 円")
-                        
+                    st.write(f"📈 **トータル純利益:** {int(total_profit):+,} 円")
                     st.write(f"📈 **トータル回収率:** {rec_rate:.2f} %")
                     st.write(f"🎯 **1点でも的中した勝率:** {any_hit_rate:.1f} %")
                     st.write(f"🔥 **3点すべて総取り確率:** {triple_hit_rate:.1f} %")
