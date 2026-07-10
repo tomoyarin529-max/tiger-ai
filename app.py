@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import re
+import numpy as np
 import zipfile
 
 # ==========================================
@@ -29,43 +30,68 @@ st.markdown("""
 st.title("🏇 AI競馬『勝因分析 ＆ 的中率向上』機")
 
 # ==========================================
-# 🧠 2. AI予測ロジック（ここをチューニングして未来を支配する）
+# 🧠 2. AI予測ロジック（鉄壁の防御シールド装備型）
 # ==========================================
 def calc_ai_score(row):
-    # 過去の戦績から複勝率を計算
-    perf = str(row.get("全成績", "0-0-0-0"))
-    match = re.match(r'(\d+)-(\d+)-(\d+)-(\d+)', perf)
-    if match:
-        w1, w2, w3, L = map(int, match.groups())
-        total = w1 + w2 + w3 + L
-        place_rate = (w1 + w2 + w3) / total if total > 0 else 0.15
-    else:
+    # ① 複勝率の計算（エラーと空欄を完全防御）
+    place_rate = 0.15
+    try:
+        perf = str(row.get("全成績", "0-0-0-0"))
+        if pd.notna(perf) and perf != "nan":
+            match = re.match(r'(\d+)-(\d+)-(\d+)-(\d+)', perf)
+            if match:
+                w1, w2, w3, L = map(int, match.groups())
+                total = w1 + w2 + w3 + L
+                if total > 0:
+                    place_rate = (w1 + w2 + w3) / total
+    except:
         place_rate = 0.15
 
-    # 血統ボーナス
-    names = ["カナロア", "ヘニー", "パイロ", "ブラック", "ダイヤ", "オペラ", "インパクト", "サトノ", "ハギノ"]
-    blood_bonus = 5 if any(x in str(row.get("馬名", "")) for x in names) else 0
-
-    # 斤量ペナルティ
-    weight = 54.0
+    # ② 血統ボーナス
+    blood_bonus = 0
     try:
-        w_str = re.sub(r'[^\d.]', '', str(row.get("負担重量", 54)))
-        if w_str:
-            weight = float(w_str)
+        u_name = str(row.get("馬名", ""))
+        if pd.notna(u_name) and u_name != "nan":
+            names = ["カナロア", "ヘニー", "パイロ", "ブラック", "ダイヤ", "オペラ", "インパクト", "サトノ", "ハギノ"]
+            if any(x in u_name for x in names):
+                blood_bonus = 5
     except:
-        pass
-    weight_penalty = (weight - 54.0) * 1.5
+        blood_bonus = 0
 
-    # 人気要素（過去データ、未来データ共通）
-    pop = 5.0
+    # ③ 斤量ペナルティ
+    weight_penalty = 0.0
     try:
-        pop = float(row.get("人気", 5))
+        w_val = row.get("負担重量", 54)
+        if pd.notna(w_val) and str(w_val) != "nan":
+            w_str = re.sub(r'[^\d.]', '', str(w_val))
+            if w_str:
+                weight = float(w_str)
+                weight_penalty = (weight - 54.0) * 1.5
     except:
-        pass
-    pop_effect = - (pop * 0.5)
+        weight_penalty = 0.0
 
-    random.seed(str(row.get("馬名", "")) + str(row.get("競馬場", "")))
-    return max(35, min(99, int(76 + (place_rate * 20) + blood_bonus - weight_penalty + pop_effect + random.randint(-1, 3))))
+    # ④ 人気要素
+    pop_effect = -2.5
+    try:
+        pop_val = row.get("人気", 5)
+        if pd.notna(pop_val) and str(pop_val) != "nan":
+            pop = float(pop_val)
+            if not np.isnan(pop):
+                pop_effect = - (pop * 0.5)
+    except:
+        pop_effect = -2.5
+
+    # ⑤ 乱数
+    rand_val = random.randint(-1, 3)
+
+    # ⑥ 最終合算（極限セーフティネット）
+    try:
+        total_score = 76.0 + (place_rate * 20.0) + float(blood_bonus) - float(weight_penalty) + float(pop_effect) + float(rand_val)
+        if np.isnan(total_score) or np.isinf(total_score):
+            return 70
+        return max(35, min(99, int(total_score)))
+    except:
+        return 70
 
 # ==========================================
 # 📂 3. ZIP/CSV一括全自動読み込み関数
@@ -118,7 +144,6 @@ if uploaded_files:
                     hit_races = 0
                     triple_races = 0
                     
-                    # レースごとにグループ化して、AI上位3頭の「実際の着順」をチェック
                     grouped = df_valid.groupby(["競馬場", "競走年月日", "レース番号"])
                     for (track, date, r), group in grouped:
                         if len(group) >= 3:
@@ -126,7 +151,6 @@ if uploaded_files:
                             top3_ai = group.sort_values(by="AIスコア", ascending=False).head(3)
                             actual_ranks = top3_ai["着順_num"].values
                             
-                            # 3着以内に入った頭数をカウント
                             inside_3 = sum(1 for rank in actual_ranks if rank <= 3)
                             if inside_3 > 0:
                                 hit_races += 1
@@ -183,7 +207,5 @@ if uploaded_files:
                 st.table(pd.DataFrame(predict_results))
             else:
                 st.info("⚪ レース情報が見つかりません。")
-    else:
-        st.info("⚪ ファイル名に 'horselist' が含まれているデータを入れてください。")
 else:
     st.info("⚪ 準備完了。過去または未来の `horselist` ファイル（ZIPのままでOK！）を上にドロップしてください。")
