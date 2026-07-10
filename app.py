@@ -73,7 +73,8 @@ def calc_true_ai_score(row):
     weight_penalty = (weight - 54.0) * 1.5
     odds_val = 5.0
     try:
-        if float(row.get("リアルタイム単勝オッズ", 5.0)) > 0: odds_val = float(row.get("リアルタイム単勝オッズ", 5.0))
+        if "リアルタイム単勝オッズ" in row.index and float(row.get("リアルタイム単勝オッズ", 5.0)) > 0: 
+            odds_val = float(row.get("リアルタイム単勝オッズ", 5.0))
     except: pass
     odds_effect = - (odds_val * 0.2)
     random.seed(str(row.get("馬名", "")) + str(row.get("競馬場", "")))
@@ -155,7 +156,7 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
         if df_odds_raw is not None:
             df_odds_raw = df_odds_raw.copy()
             if "賭式" in df_odds_raw.columns:
-                df_win_odds = df_odds_raw[df_odds_raw["賭式"] == "単勝"][["競馬場", "レース番号", "番号1", "オッズ"]].rename(columns={"番号1": "馬番", "オッズ": "リアルタイム単勝オッズ"})
+                df_win_odds = df_odds_raw[df_odds_raw["賭式"] == "単勝"][["競馬場", "レース番号", "馬番", "オッズ"]].rename(columns={"オッズ": "リアルタイム単勝オッズ"})
                 df_horse_raw = pd.merge(df_horse_raw, df_win_odds, on=["競馬場", "レース番号", "馬番"], how="left")
                 
         df_horse_raw["AI勝率スコア"] = df_horse_raw.apply(calc_true_ai_score, axis=1)
@@ -203,9 +204,19 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                     win_odds_val = top3.loc[0, 'リアルタイム単勝オッズ'] if 'リアルタイム単勝オッズ' in top3.columns else 0.0
                     win_odds_str = f" [{win_odds_val}倍]" if float(win_odds_val) > 0 else ""
                     
-                    df_ana_candidates = df_r[df_r["リアルタイム単勝オッズ"] >= 10.0]
-                    ana_horse_row = df_ana_candidates.sort_values(by="AI勝率スコア", ascending=False).iloc[0] if not df_ana_candidates.empty else (sorted_horses.loc[3] if len(sorted_horses) >= 4 else None)
-                    ana_signal = f"🔥 LOCKON!! 【 {int(float(ana_horse_row['馬番']))}番 】 ({ana_horse_row['馬名']}) [{ana_horse_row['リアルタイム単勝オッズ']}倍]" if ana_horse_row is not None else "ーー（安全第一・見送り）"
+                    # 🛠️ 【防衛線】オッズデータが欠損・無い場合でもKeyErrorを絶対に起こさない安全コードに完全置換！
+                    if "リアルタイム単勝オッズ" in df_r.columns:
+                        df_ana_candidates = df_r[df_r["リアルタイム単勝オッズ"].fillna(0) >= 10.0]
+                        ana_horse_row = df_ana_candidates.sort_values(by="AI勝率スコア", ascending=False).iloc[0] if not df_ana_candidates.empty else (sorted_horses.loc[3] if len(sorted_horses) >= 4 else None)
+                    else:
+                        ana_horse_row = sorted_horses.loc[3] if len(sorted_horses) >= 4 else None
+                    
+                    if ana_horse_row is not None:
+                        ana_odds = ana_horse_row.get('リアルタイム単勝オッズ', 0.0)
+                        ana_odds_str = f" [{ana_odds}倍]" if pd.notna(ana_odds) and float(ana_odds) > 0 else ""
+                        ana_signal = f"🔥 LOCKON!! 【 {int(float(ana_horse_row['馬番']))}番 】 ({ana_horse_row['馬名']}){ana_odds_str}"
+                    else:
+                        ana_signal = "ーー（安全第一・見送り）"
                     
                     if win_rate >= target_win_rate:
                         all_wide_matches.append({
@@ -229,7 +240,6 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                 line_msg += f"🔥大穴単勝: {match['🔥 大穴単勝 (100円)']}\n"
                 line_msg += "----------------------------------\n"
             
-            # 🚨 修正箇所：LINE送信命令を完全に「if all_wide_matches:」の内部に引き入れました！
             if df_odds_raw is not None: 
                 send_horse_line(line_msg)
 
@@ -277,15 +287,22 @@ elif mode == "📊 過去データ一括検証・勝因分析":
             df_master_payback = pd.concat(list_payback, ignore_index=True) if list_payback else None
             df_master_odds = pd.concat(list_odds, ignore_index=True) if list_odds else None
 
-        if df_master_horse is not None and df_master_payback is not None and df_master_odds is not None:
-            st.success(f"🟢 索敵成功！馬データ {len(df_master_horse)}行 / オッズデータ {len(df_master_odds)}行 を完全統合しました！")
+        # 🛠️ 【過去オッズ無し問題・大改善】オッズデータが無くても、馬データと払戻金データがあれば完全検証できるように仕様を大幅強化！
+        if df_master_horse is not None and df_master_payback is not None:
+            st.success(f"🟢 索敵成功！馬データ {len(df_master_horse)}行 / 払戻データ {len(df_master_payback)}行 を完全統合しました！")
+            if df_master_odds is not None:
+                st.info(f"📊 オッズデータ {len(df_master_odds)}行 も連動（傾斜配分シミュレーション有効）")
+            else:
+                st.warning("⚠️ 過去オッズデータが未検出（または無いレース）のため、一律ベタ買い（1点100円・計300円）としてシミュレーションを行います！")
             
             if st.button("⚔️ 過去データ検証作戦（バックテスト）を開始せよ！"):
                 backtest_results = []
                 
                 with st.spinner("🧠 AIが過去の全レースを脳内シミュレーション中..."):
-                    df_win_odds = df_master_odds[df_master_odds["賭式"] == "単勝"][["競馬場", "競走年月日", "レース番号", "番号1", "オッズ"]].rename(columns={"番号1": "馬番", "オッズ": "リアルタイム単勝オッズ"})
-                    df_master_horse = pd.merge(df_master_horse, df_win_odds, on=["競馬場", "競走年月日", "レース番号", "馬番"], how="left")
+                    # 単勝オッズをマージ (オッズデータがある場合のみ)
+                    if df_master_odds is not None and "賭式" in df_master_odds.columns:
+                        df_win_odds = df_master_odds[df_master_odds["賭式"] == "単勝"][["競馬場", "競走年月日", "レース番号", "馬番", "オッズ"]].rename(columns={"オッズ": "リアルタイム単勝オッズ"})
+                        df_master_horse = pd.merge(df_master_horse, df_win_odds, on=["競馬場", "競走年月日", "レース番号", "馬番"], how="left")
                     
                     df_master_horse["AI勝率スコア"] = df_master_horse.apply(calc_true_ai_score, axis=1)
                     grouped = df_master_horse.groupby(["競馬場", "競走年月日", "レース番号"])
@@ -301,76 +318,24 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                             win_rate = max(55, min(97, int(avg_score * 0.78 + random.randint(-1, 2))))
                             
                             if win_rate >= target_win_rate:
-                                odds12 = get_wide_odds_float(df_master_odds, track, date, r, n1, n2)
-                                odds13 = get_wide_odds_float(df_master_odds, track, date, r, n1, n3)
-                                odds23 = get_wide_odds_float(df_master_odds, track, date, r, n2, n3)
-                                
                                 total_budget = 1000
                                 amt12, amt13, amt23 = 100, 100, 100
-                                if odds12 > 0 and odds13 > 0 and odds23 > 0:
-                                    try:
-                                        sum_inv = (1.0 / odds12) + (1.0 / odds13) + (1.0 / odds23)
-                                        amt12 = max(100, int(round((total_budget / odds12) / sum_inv / 100) * 100))
-                                        amt13 = max(100, int(round((total_budget / odds13) / sum_inv / 100) * 100))
-                                        amt23 = max(100, int(round((total_budget / odds23) / sum_inv / 100) * 100))
-                                    except: pass
+                                
+                                # 過去オッズデータが存在する場合のみ傾斜配分を行う
+                                if df_master_odds is not None:
+                                    odds12 = get_wide_odds_float(df_master_odds, track, r, n1, n2, date)
+                                    odds13 = get_wide_odds_float(df_master_odds, track, r, n1, n3, date)
+                                    odds23 = get_wide_odds_float(df_master_odds, track, r, n2, n3, date)
+                                    
+                                    if odds12 > 0 and odds13 > 0 and odds23 > 0:
+                                        try:
+                                            sum_inv = (1.0 / odds12) + (1.0 / odds13) + (1.0 / odds23)
+                                            amt12 = max(100, int(round((total_budget / odds12) / sum_inv / 100) * 100))
+                                            amt13 = max(100, int(round((total_budget / odds13) / sum_inv / 100) * 100))
+                                            amt23 = max(100, int(round((total_budget / odds23) / sum_inv / 100) * 100))
+                                        except: pass
                                 
                                 actual_bet = amt12 + amt13 + amt23
                                 
-                                df_pb = df_master_payback[(df_master_payback["競馬場"] == track) & (df_master_payback["競走年月日"] == date) & (df_master_payback["レース番号"] == int(float(r)))]
-                                payback_total = 0
-                                hit_count = 0
-                                
-                                if not df_pb.empty:
-                                    row_pb = df_pb.iloc[0]
-                                    pair12 = {min(int(n1), int(n2)), max(int(n1), int(n2))}
-                                    pair13 = {min(int(n1), int(n3)), max(int(n1), int(n3))}
-                                    pair23 = {min(int(n2), int(n3)), max(int(n2), int(n3))}
-                                    
-                                    for idx in [1, 2, 3]:
-                                        w_b1 = row_pb.get(f"ワイド組番{idx}馬番1")
-                                        w_b2 = row_pb.get(f"ワイド組番{idx}馬番2")
-                                        w_amt = row_pb.get(f"ワイド払戻金{idx}（円）")
-                                        if pd.notna(w_b1) and pd.notna(w_b2):
-                                            pb_pair = {min(int(w_b1), int(w_b2)), max(int(w_b1), int(w_b2))}
-                                            if pb_pair == pair12: payback_total += (amt12 / 100) * w_amt; hit_count += 1
-                                            if pb_pair == pair13: payback_total += (amt13 / 100) * w_amt; hit_count += 1
-                                            if pb_pair == pair23: payback_total += (amt23 / 100) * w_amt; hit_count += 1
-                                
-                                backtest_results.append({
-                                    "投資": actual_bet,
-                                    "払戻": payback_total,
-                                    "収支": payback_total - actual_bet,
-                                    "的中数": hit_count
-                                })
-                
-                if backtest_results:
-                    df_res = pd.DataFrame(backtest_results)
-                    total_races = len(df_res)
-                    total_invest = df_res["投資"].sum()
-                    total_payback = df_res["払戻"].sum()
-                    total_profit = df_res["収支"].sum()
-                    rec_rate = (total_payback / total_invest) * 100 if total_invest > 0 else 0
-                    
-                    hit_races = len(df_res[df_res["的中数"] > 0])
-                    triple_races = len(df_res[df_res["的中数"] == 3])
-                    
-                    st.markdown("### 🏆 検証作戦結果レポート")
-                    st.markdown('<div class="gold-box">', unsafe_allow_html=True)
-                    st.write(f"📊 **総厳選出撃レース数:** {total_races} レース")
-                    st.write(f"💵 **総投資額:** {int(total_invest):,} 円")
-                    st.write(f"💰 **総払戻金:** {int(total_payback):,} 円")
-                    
-                    if total_profit >= 0:
-                        st.write(f"🟢 **トータル純利益:** +{int(total_profit):,} 円")
-                    else:
-                        st.write(f"🔴 **トータル純損失:** {int(total_profit):,} 円")
-                        
-                    st.write(f"📈 **トータル回収率:** {rec_rate:.2f} %")
-                    st.write(f"🎯 **1点でも的中した確率（勝率）:** {hit_races / total_races * 100:.1f} % ({hit_races}/{total_races})")
-                    st.write(f"🔥 **3点すべて総取り（トリプル）確率:** {triple_races / total_races * 100:.1f} % ({triple_races}/{total_races})")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ 指定された『最低AI推奨度』を満たすレースが過去データ内に存在しませんでした。基準を少し下げて再挑戦してください。")
-        else:
-            st.info("⚪ 検証を開始するには、同じ月の『race.zip』と『odds.zip』の両方を放り込んでください。")
+                                # 実際の払戻と照合
+                                df_pb = df_master_payback[(df_master_payback["競馬場"] == track) & (df_master_pay
