@@ -238,4 +238,3 @@ if df_horse_raw is not None and df_race_raw is not None:
             
         if df_odds_raw is not None:
             send_horse_line(line_msg)
-}
