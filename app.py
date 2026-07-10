@@ -21,7 +21,7 @@ st.markdown("""
     h1 { color: #1b5e20 !important; font-weight: 900 !important; text-align: center !important; }
     h3 { color: #2e7d32 !important; border-left: 6px solid #2e7d32; padding-left: 10px; font-weight: bold !important; }
     .stTable table { color: #000000 !important; background-color: #ffffff !important; }
-    .stTable th { background-color: #1b5e20 !important; color: #ffffff !important; font-weight: bold !important; text-align: center !important; }
+    .stTable th { background-color: #1b5e20 !important; color: #ffffff !important; text-align: center !important; }
     .stTable td { text-align: center !important; font-weight: bold !important; color: #000000 !important; }
     p, span, label { color: #111111 !important; font-weight: bold !important; }
 </style>
@@ -110,6 +110,10 @@ def load_horselist_files(uploaded_files):
 st.sidebar.markdown("### ⚙️ 作戦司令パネル")
 mode = st.sidebar.radio("🔥 モードを選択せよ！", ["📊 過去レース勝因分析（オッズ不要）", "🔮 未来レース一発予想"])
 
+st.sidebar.markdown("---")
+# 🚨 大将軍の戦略：AIの自信度でレース自体を厳選し、勝率90%を狙うスライダー
+min_ai_score = st.sidebar.slider("🚨 AI自信度でレースを厳選（勝率90%超へ）", min_value=70, max_value=95, value=80, step=1)
+
 uploaded_files = st.file_uploader("📋 horselistのZIPまたはCSVファイルをここにドロップ！", type=["csv", "zip"], accept_multiple_files=True)
 
 # ==========================================
@@ -140,8 +144,13 @@ if uploaded_files:
                     grouped = df_valid.groupby(["競馬場", "競走年月日", "レース番号"])
                     for (track, date, r), group in grouped:
                         if len(group) >= 3:
-                            total_races += 1
                             top3_ai = group.sort_values(by="AIスコア", ascending=False).head(3)
+                            
+                            # 🚨 厳選フィルターの適用（過去検証）
+                            if top3_ai.iloc[0]["AIスコア"] < min_ai_score:
+                                continue
+                                
+                            total_races += 1
                             actual_ranks = top3_ai["着順_num"].values
                             
                             inside_3 = sum(1 for rank in actual_ranks if rank <= 3)
@@ -151,7 +160,7 @@ if uploaded_files:
                                 triple_races += 1
                     
                     st.markdown('<div class="gold-box">', unsafe_allow_html=True)
-                    st.write(f"📈 **検証対象レース数:** {total_races} レース")
+                    st.write(f"📈 **厳選された対象レース数:** {total_races} レース")
                     if total_races > 0:
                         any_hit_rate = (hit_races / total_races) * 100
                         triple_hit_rate = (triple_races / total_races) * 100
@@ -176,14 +185,19 @@ if uploaded_files:
                 
             grouped = df_master.groupby(group_cols)
             for keys, group in grouped:
-                # 🚨 大将軍の神の着眼点：着順データが1頭でも既に入っている＝終わったレースと100%自動判定！
+                # 自動終了判定
                 if "着順" in group.columns:
                     has_result = pd.to_numeric(group["着順"], errors='coerce').notna().any()
                     if has_result:
-                        continue # 終わったレースは自動で完全スキップ（非表示）！！！
+                        continue
 
                 if len(group) >= 3:
                     top3 = group.sort_values(by="AIスコア", ascending=False).head(3)
+                    
+                    # 🚨 大将軍の戦略：大本命馬のスコアが基準未満ならレースごと非表示！
+                    if top3.iloc[0]["AIスコア"] < min_ai_score:
+                        continue
+
                     h_list = []
                     for _, row in top3.iterrows():
                         try:
@@ -200,11 +214,17 @@ if uploaded_files:
                         track_val, r_val = keys
                         race_name = f"{track_val} {r_val}R"
                         
-                    predict_results.append({"対象レース": race_name, "AI推奨馬上位3頭": horses_str})
+                    # 画面表示用に1番手のスコアをちょっと添える
+                    b_score = top3.iloc[0]["AIスコア"]
+                    predict_results.append({
+                        "対象レース": race_name, 
+                        "AI推奨馬上位3頭": horses_str,
+                        "大本命の自信度": f"{b_score}点"
+                    })
                     
             if predict_results:
                 st.table(pd.DataFrame(predict_results))
             else:
-                st.info("🔮 素晴らしい！本日（または選択されたファイル内）のすべてのレースが終了したか、未来のレースデータがありません。")
+                st.info("🔮 条件を満たす厳選レースがありません。スライダーの数値を少し下げてみてください。")
 else:
-    st.info("⚪ 準備完了。過去または未来の `horselist` ファイル（ZIPのままでOK！）を上にドロップしてください。")
+    st.info("⚪ 準備完了。`horselist` ファイルを上にドロップしてください。")
