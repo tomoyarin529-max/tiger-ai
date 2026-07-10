@@ -110,10 +110,6 @@ def load_horselist_files(uploaded_files):
 st.sidebar.markdown("### ⚙️ 作戦司令パネル")
 mode = st.sidebar.radio("🔥 モードを選択せよ！", ["📊 過去レース勝因分析（オッズ不要）", "🔮 未来レース一発予想"])
 
-st.sidebar.markdown("---")
-# 🚨 大将軍のアイデア：終わったレースを非表示にするステルスフィルター
-min_race = st.sidebar.slider("🕒 何レース以降を表示する？（過去レースを隠す）", min_value=1, max_value=12, value=1)
-
 uploaded_files = st.file_uploader("📋 horselistのZIPまたはCSVファイルをここにドロップ！", type=["csv", "zip"], accept_multiple_files=True)
 
 # ==========================================
@@ -180,22 +176,11 @@ if uploaded_files:
                 
             grouped = df_master.groupby(group_cols)
             for keys, group in grouped:
-                # レース番号を取得して数値化
-                if len(group_cols) == 3:
-                    track_val, date_val, r_val = keys
-                    race_name = f"{date_val} {track_val} {r_val}R"
-                else:
-                    track_val, r_val = keys
-                    race_name = f"{track_val} {r_val}R"
-                
-                try:
-                    r_num = int(float(r_val))
-                except:
-                    r_num = 1
-                
-                # 🚨 スライダーで指定したレース番号より前（終わったレース）ならスキップ（非表示）
-                if r_num < min_race:
-                    continue
+                # 🚨 大将軍の神の着眼点：着順データが1頭でも既に入っている＝終わったレースと100%自動判定！
+                if "着順" in group.columns:
+                    has_result = pd.to_numeric(group["着順"], errors='coerce').notna().any()
+                    if has_result:
+                        continue # 終わったレースは自動で完全スキップ（非表示）！！！
 
                 if len(group) >= 3:
                     top3 = group.sort_values(by="AIスコア", ascending=False).head(3)
@@ -207,12 +192,19 @@ if uploaded_files:
                             b_num = row.get("馬番", 0)
                         h_list.append(f"{b_num}番({row.get('馬名', '')})")
                     horses_str = " , ".join(h_list)
+                    
+                    if len(group_cols) == 3:
+                        track_val, date_val, r_val = keys
+                        race_name = f"{date_val} {track_val} {r_val}R"
+                    else:
+                        track_val, r_val = keys
+                        race_name = f"{track_val} {r_val}R"
                         
                     predict_results.append({"対象レース": race_name, "AI推奨馬上位3頭": horses_str})
                     
             if predict_results:
                 st.table(pd.DataFrame(predict_results))
             else:
-                st.info("⚪ 指定されたレース番号以降のレースが見つかりません。スライダーを戻すか、新しいファイルを入れてください。")
+                st.info("🔮 素晴らしい！本日（または選択されたファイル内）のすべてのレースが終了したか、未来のレースデータがありません。")
 else:
     st.info("⚪ 準備完了。過去または未来の `horselist` ファイル（ZIPのままでOK！）を上にドロップしてください。")
