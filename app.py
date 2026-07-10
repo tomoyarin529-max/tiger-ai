@@ -115,7 +115,7 @@ def get_wide_odds_float(odds_df, track, race, horse_a, horse_b, date=None):
     return 0.0
 
 # ==========================================
-# 📂 5. 【超絶簡略化】当日ファイル全自動仕分け関数
+# 📂 5. 当日ファイル全自動仕分け関数
 # ==========================================
 def process_current_files(uploaded_files):
     df_h, df_r, df_o = None, None, None
@@ -138,7 +138,7 @@ def process_current_files(uploaded_files):
     return df_h, df_r, df_o
 
 # ==========================================
-# 📊 6. 【超絶簡略化】過去アーカイブ全自動全結合関数
+# 📊 6. 過去アーカイブ全自動全結合関数
 # ==========================================
 def process_archive_files(archive_files):
     list_horse, list_race, list_payback, list_odds = [], [], [], []
@@ -222,7 +222,7 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                         win_rate = max(55, min(97, int(avg_score * 0.78 + random.randint(-1, 2))))
                         
                         race_time_str = "時刻不明"
-                        df_time_search = df_r[((df_r["競馬場"] == track) & (df_r["レース番号"] == int(float(r))))]
+                        df_time_search = df_r[(df_r["競馬場"] == track) & (df_r["レース番号"] == int(float(r)))]
                         if not df_time_search.empty:
                             race_time_str = str(df_time_search.iloc[0]["発走時刻"]) if "発走時刻" in df_time_search.columns else str(df_time_search.iloc[0]["発走予定時刻"])
 
@@ -248,15 +248,31 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                         
                         df_ana_candidates = df_r_race[df_r_race["リアルタイム単勝オッズ"] >= 10.0]
                         ana_horse_row = df_ana_candidates.sort_values(by="AI勝率スコア", ascending=False).iloc[0] if not df_ana_candidates.empty else (sorted_horses.loc[3] if len(sorted_horses) >= 4 else None)
-                        ana_signal = f"🔥 LOCKON!! 【 {int(float(ana_horse_row['馬番']))}番 】 ({ana_horse_row['馬名']}) [{ana_horse_row['リアルタイム単勝オッズ']}倍]" if ana_horse_row is not None else "ーー（安全第一・見送り）"
+                        
+                        if ana_horse_row is not None:
+                            a_num = int(float(ana_horse_row['馬番']))
+                            a_name = ana_horse_row['馬名']
+                            a_odds = ana_horse_row['リアルタイム単勝オッズ']
+                            ana_signal = f"🔥 LOCKON!! 【 {a_num}番 】 ({a_name}) [{a_odds}倍]"
+                        else:
+                            ana_signal = "ーー（安全第一・見送り）"
                         
                         if win_rate >= target_win_rate:
+                            h_num = int(float(n1))
+                            h_name = top3.loc[0, '馬名']
+                            
+                            # 🚨 徹底追放：f文字列の中身を変数化して超安全に結合！
+                            race_title = f"{track} {int(float(r))}R"
+                            combos_str = f"{str12}\n{str13}\n{str23}"
+                            honmei_str = f"{h_num}番 ({h_name}){win_odds_str}"
+                            rate_str = f"{win_rate} ％"
+                            
                             all_wide_matches.append({
-                                "対象レース": f"{track} {int(float(r))}R",
+                                "対象レース": race_title,
                                 "発走時刻": race_time_str,
-                                "ワイド 3点買い目（オッズ＆推奨購入額）": f"{str12}\n{str13}\n{str23}",
-                                "大本命馬": f"{int(float(n1))}番 ({top3.loc[0, '馬名']}){win_odds_str}",
-                                "AI推奨度": f"{win_rate} ％",
+                                "ワイド 3点買い目（オッズ＆推奨購入額）": combos_str,
+                                "大本命馬": honmei_str,
+                                "AI推奨度": rate_str,
                                 "🔥 大穴単勝 (100円)": ana_signal
                             })                    
 
@@ -264,9 +280,16 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                 st.table(pd.DataFrame(all_wide_matches)[["対象レース", "発走時刻", "ワイド 3点買い目（オッズ＆推奨購入額）", "大本命馬", "AI推奨度", "🔥 大穴単勝 (100円)"]])
                 line_msg = "🏇【AI・クラウド要塞報告】🏇\n"
                 for match in all_wide_matches:
-                    line_msg += f"\n■ {match['対象レース']} (🕒発走: {match['発走時刻']}) \n"
-                    line_msg += f"👉AI推奨度: {match['AI推奨度']}\n{match['ワイド 3点買い目（オッズ＆推奨購入額）']}\n"
-                    line_msg += f"★大本命: {match['大本命馬']}\n🔥大穴単勝: {match['🔥 大穴単勝 (100円)']}\n----------------------------------\n"
+                    r_race = match["対象レース"]
+                    r_time = match["発走時刻"]
+                    r_combos = match["ワイド 3点買い目（オッズ＆推奨購入額）"]
+                    r_honmei = match["大本命馬"]
+                    r_ana = match["🔥 大穴単勝 (100円)"]
+                    r_rate = match["AI推奨度"]
+                    
+                    line_msg += f"\n■ {r_race} (🕒発走: {r_time}) \n"
+                    line_msg += f"👉AI推奨度: {r_rate}\n{r_combos}\n"
+                    line_msg += f"★大本命: {r_honmei}\n🔥大穴単勝: {r_ana}\n----------------------------------\n"
                 if df_o is not None: send_horse_line(line_msg)
 
 elif mode == "📊 過去データ一括検証・勝因分析":
@@ -342,13 +365,24 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                     total_profit = df_res["収支"].sum()
                     rec_rate = (total_payback / total_invest) * 100 if total_invest > 0 else 0
                     
+                    # 🚨 徹底追放：複雑な集計処理を完全にf文字列の外側に隔離！
+                    df_hit_any = df_res[df_res["的中数"] > 0]
+                    df_hit_triple = df_res[df_res["的中数"] == 3]
+                    any_hit_rate = (len(df_hit_any) / total_races) * 100
+                    triple_hit_rate = (len(df_hit_triple) / total_races) * 100
+                    
                     st.markdown("### 🏆 検証作戦結果レポート")
                     st.markdown('<div class="gold-box">', unsafe_allow_html=True)
                     st.write(f"📊 **総厳選出撃レース数:** {total_races} レース")
                     st.write(f"💵 **総投資額:** {int(total_invest):,} 円")
                     st.write(f"💰 **総払戻金:** {int(total_payback):,} 円")
-                    st.write(f"📈 **トータル純利益:** {int(total_profit):+,} 円")
+                    
+                    if total_profit >= 0:
+                        st.write(f"📈 **トータル純利益:** +{int(total_profit):,} 円")
+                    else:
+                        st.write(f"📈 **トータル純損失:** {int(total_profit):,} 円")
+                        
                     st.write(f"📈 **トータル回収率:** {rec_rate:.2f} %")
-                    st.write(f"🎯 **1点でも的中した勝率:** {len(df_res[df_res['的中数'] > 0]) / total_races * 100:.1f} %")
-                    st.write(f"🔥 **3点すべて総取り確率:** {len(df_res[df_res['的中数'] == 3]) / total_races * 100:.1f} %")
+                    st.write(f"🎯 **1点でも的中した勝率:** {any_hit_rate:.1f} %")
+                    st.write(f"🔥 **3点すべて総取り確率:** {triple_hit_rate:.1f} %")
                     st.markdown('</div>', unsafe_allow_html=True)
