@@ -30,10 +30,9 @@ st.markdown("""
 st.title("🏇 AI競馬『勝因分析 ＆ 的中率向上』機")
 
 # ==========================================
-# 🧠 2. AI予測ロジック（鉄壁の防御シールド装備型）
+# 🧠 2. AI予測ロジック
 # ==========================================
 def calc_ai_score(row):
-    # ① 複勝率の計算（エラーと空欄を完全防御）
     place_rate = 0.15
     try:
         perf = str(row.get("全成績", "0-0-0-0"))
@@ -47,7 +46,6 @@ def calc_ai_score(row):
     except:
         place_rate = 0.15
 
-    # ② 血統ボーナス
     blood_bonus = 0
     try:
         u_name = str(row.get("馬名", ""))
@@ -58,7 +56,6 @@ def calc_ai_score(row):
     except:
         blood_bonus = 0
 
-    # ③ 斤量ペナルティ
     weight_penalty = 0.0
     try:
         w_val = row.get("負担重量", 54)
@@ -70,7 +67,6 @@ def calc_ai_score(row):
     except:
         weight_penalty = 0.0
 
-    # ④ 人気要素
     pop_effect = -2.5
     try:
         pop_val = row.get("人気", 5)
@@ -81,10 +77,8 @@ def calc_ai_score(row):
     except:
         pop_effect = -2.5
 
-    # ⑤ 乱数
     rand_val = random.randint(-1, 3)
 
-    # ⑥ 最終合算（極限セーフティネット）
     try:
         total_score = 76.0 + (place_rate * 20.0) + float(blood_bonus) - float(weight_penalty) + float(pop_effect) + float(rand_val)
         if np.isnan(total_score) or np.isinf(total_score):
@@ -111,10 +105,14 @@ def load_horselist_files(uploaded_files):
     return None
 
 # ==========================================
-# ⚙️ 4. モード選択パネル
+# ⚙️ 4. 作戦司令パネル（サイドバー）
 # ==========================================
 st.sidebar.markdown("### ⚙️ 作戦司令パネル")
 mode = st.sidebar.radio("🔥 モードを選択せよ！", ["📊 過去レース勝因分析（オッズ不要）", "🔮 未来レース一発予想"])
+
+st.sidebar.markdown("---")
+# 🚨 大将軍のアイデア：終わったレースを非表示にするステルスフィルター
+min_race = st.sidebar.slider("🕒 何レース以降を表示する？（過去レースを隠す）", min_value=1, max_value=12, value=1)
 
 uploaded_files = st.file_uploader("📋 horselistのZIPまたはCSVファイルをここにドロップ！", type=["csv", "zip"], accept_multiple_files=True)
 
@@ -126,7 +124,6 @@ if uploaded_files:
     if df_master is not None:
         st.success("🟢 索敵成功！馬データを読み込みました。")
         
-        # すべての馬のAIスコアを計算
         df_master["AIスコア"] = df_master.apply(calc_ai_score, axis=1)
 
         # ------------------------------------------
@@ -183,6 +180,23 @@ if uploaded_files:
                 
             grouped = df_master.groupby(group_cols)
             for keys, group in grouped:
+                # レース番号を取得して数値化
+                if len(group_cols) == 3:
+                    track_val, date_val, r_val = keys
+                    race_name = f"{date_val} {track_val} {r_val}R"
+                else:
+                    track_val, r_val = keys
+                    race_name = f"{track_val} {r_val}R"
+                
+                try:
+                    r_num = int(float(r_val))
+                except:
+                    r_num = 1
+                
+                # 🚨 スライダーで指定したレース番号より前（終わったレース）ならスキップ（非表示）
+                if r_num < min_race:
+                    continue
+
                 if len(group) >= 3:
                     top3 = group.sort_values(by="AIスコア", ascending=False).head(3)
                     h_list = []
@@ -193,19 +207,12 @@ if uploaded_files:
                             b_num = row.get("馬番", 0)
                         h_list.append(f"{b_num}番({row.get('馬名', '')})")
                     horses_str = " , ".join(h_list)
-                    
-                    if len(group_cols) == 3:
-                        track_val, date_val, r_val = keys
-                        race_name = f"{date_val} {track_val} {r_val}R"
-                    else:
-                        track_val, r_val = keys
-                        race_name = f"{track_val} {r_val}R"
                         
                     predict_results.append({"対象レース": race_name, "AI推奨馬上位3頭": horses_str})
                     
             if predict_results:
                 st.table(pd.DataFrame(predict_results))
             else:
-                st.info("⚪ レース情報が見つかりません。")
+                st.info("⚪ 指定されたレース番号以降のレースが見つかりません。スライダーを戻すか、新しいファイルを入れてください。")
 else:
     st.info("⚪ 準備完了。過去または未来の `horselist` ファイル（ZIPのままでOK！）を上にドロップしてください。")
