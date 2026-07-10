@@ -87,16 +87,18 @@ mode = st.sidebar.radio("🔥 モードを選択せよ！", ["地方競馬（実
 st.sidebar.markdown("---")
 target_win_rate = st.sidebar.slider("🚨 購入を発動する最低AI推奨度（％）", min_value=55, max_value=95, value=74, step=1)
 
-# オッズ抽出用関数（安全改行版）
+# オッズ抽出用関数（金剛不壊・括弧囲み版）
 def get_wide_odds_float(odds_df, track, race, horse_a, horse_b, date=None):
     try:
         b1 = min(int(float(horse_a)), int(float(horse_b)))
         b2 = max(int(float(horse_a)), int(float(horse_b)))
-        cond = (odds_df["競馬場"] == track) & \
-               (odds_df["レース番号"] == int(float(race))) & \
-               (odds_df["賭式"] == "ワイド") & \
-               (odds_df["番号1"] == b1) & \
-               (odds_df["番号2"] == b2)
+        cond = (
+            (odds_df["競馬場"] == track) & 
+            (odds_df["レース番号"] == int(float(race))) & 
+            (odds_df["賭式"] == "ワイド") & 
+            (odds_df["番号1"] == b1) & 
+            (odds_df["番号2"] == b2)
+        )
         if date is not None and "競走年月日" in odds_df.columns:
             cond = cond & (odds_df["競走年月日"] == date)
         df_w = odds_df[cond]
@@ -304,9 +306,10 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                             win_rate = max(55, min(97, int(avg_score * 0.78 + random.randint(-1, 2))))
                             
                             if win_rate >= target_win_rate:
-                                odds12 = get_wide_odds_float(df_master_odds, track, date, r, n1, n2)
-                                odds13 = get_wide_odds_float(df_master_odds, track, date, r, n1, n3)
-                                odds23 = get_wide_odds_float(df_master_odds, track, date, r, n2, n3)
+                                # 🔍 引数の順番バグを完全に修正！
+                                odds12 = get_wide_odds_float(df_master_odds, track, r, n1, n2, date=date)
+                                odds13 = get_wide_odds_float(df_master_odds, track, r, n1, n3, date=date)
+                                odds23 = get_wide_odds_float(df_master_odds, track, r, n2, n3, date=date)
                                 
                                 total_budget = 1000
                                 amt12, amt13, amt23 = 100, 100, 100
@@ -320,10 +323,12 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                                 
                                 actual_bet = amt12 + amt13 + amt23
                                 
-                                # 🚨 【安全改行版】3行に分割し、絶対に途中で切れない強固な布陣に修正！
-                                cond_pb = (df_master_payback["競馬場"] == track) & \
-                                          (df_master_payback["競走年月日"] == date) & \
-                                          (df_master_payback["レース番号"] == int(float(r)))
+                                # 🛡️ 金剛不壊：括弧囲みにしてバックスラッシュを完全排除！
+                                cond_pb = (
+                                    (df_master_payback["競馬場"] == track) &
+                                    (df_master_payback["競走年月日"] == date) &
+                                    (df_master_payback["レース番号"] == int(float(r)))
+                                )
                                           
                                 df_pb = df_master_payback[cond_pb]
                                 payback_total = 0
