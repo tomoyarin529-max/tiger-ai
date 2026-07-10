@@ -228,7 +228,10 @@ if mode in ["地方競馬（実戦・当日ZIP丸投げ）", "中央競馬（JRA
                 line_msg += f"★大本命: {match['大本命馬']}\n"
                 line_msg += f"🔥大穴単勝: {match['🔥 大穴単勝 (100円)']}\n"
                 line_msg += "----------------------------------\n"
-            if df_odds_raw is not None: send_horse_line(line_msg)
+            
+            # 🚨 修正箇所：LINE送信命令を完全に「if all_wide_matches:」の内部に引き入れました！
+            if df_odds_raw is not None: 
+                send_horse_line(line_msg)
 
 # ==========================================
 # 📊 モードC：【大将軍専用】過去データ一括検証・勝因分析モード
@@ -269,7 +272,6 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                         elif "odds" in f_name_lower: list_odds.append(df_temp)
                     except: pass
             
-            # 各データの巨大結合マスターを作成
             df_master_horse = pd.concat(list_horse, ignore_index=True) if list_horse else None
             df_master_race = pd.concat(list_race, ignore_index=True) if list_race else None
             df_master_payback = pd.concat(list_payback, ignore_index=True) if list_payback else None
@@ -278,19 +280,14 @@ elif mode == "📊 過去データ一括検証・勝因分析":
         if df_master_horse is not None and df_master_payback is not None and df_master_odds is not None:
             st.success(f"🟢 索敵成功！馬データ {len(df_master_horse)}行 / オッズデータ {len(df_master_odds)}行 を完全統合しました！")
             
-            # バックテスト実行ボタン
             if st.button("⚔️ 過去データ検証作戦（バックテスト）を開始せよ！"):
                 backtest_results = []
                 
                 with st.spinner("🧠 AIが過去の全レースを脳内シミュレーション中..."):
-                    # 単勝オッズをマージ
                     df_win_odds = df_master_odds[df_master_odds["賭式"] == "単勝"][["競馬場", "競走年月日", "レース番号", "番号1", "オッズ"]].rename(columns={"番号1": "馬番", "オッズ": "リアルタイム単勝オッズ"})
                     df_master_horse = pd.merge(df_master_horse, df_win_odds, on=["競馬場", "競走年月日", "レース番号", "馬番"], how="left")
                     
-                    # スコア計算
                     df_master_horse["AI勝率スコア"] = df_master_horse.apply(calc_true_ai_score, axis=1)
-                    
-                    # レースごとにグループ化して検証
                     grouped = df_master_horse.groupby(["競馬場", "競走年月日", "レース番号"])
                     
                     for (track, date, r), df_r in grouped:
@@ -303,13 +300,11 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                             random.seed(int(avg_score))
                             win_rate = max(55, min(97, int(avg_score * 0.78 + random.randint(-1, 2))))
                             
-                            # 選択したしきい値以上のレースだけを出撃対象とする
                             if win_rate >= target_win_rate:
                                 odds12 = get_wide_odds_float(df_master_odds, track, date, r, n1, n2)
                                 odds13 = get_wide_odds_float(df_master_odds, track, date, r, n1, n3)
                                 odds23 = get_wide_odds_float(df_master_odds, track, date, r, n2, n3)
                                 
-                                # 1000円傾斜配分ロジック
                                 total_budget = 1000
                                 amt12, amt13, amt23 = 100, 100, 100
                                 if odds12 > 0 and odds13 > 0 and odds23 > 0:
@@ -322,7 +317,6 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                                 
                                 actual_bet = amt12 + amt13 + amt23
                                 
-                                # 実際の払戻と照合
                                 df_pb = df_master_payback[(df_master_payback["競馬場"] == track) & (df_master_payback["競走年月日"] == date) & (df_master_payback["レース番号"] == int(float(r)))]
                                 payback_total = 0
                                 hit_count = 0
@@ -350,7 +344,6 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                                     "的中数": hit_count
                                 })
                 
-                # 🛑 結果レポートの描画
                 if backtest_results:
                     df_res = pd.DataFrame(backtest_results)
                     total_races = len(df_res)
@@ -381,4 +374,3 @@ elif mode == "📊 過去データ一括検証・勝因分析":
                     st.warning("⚠️ 指定された『最低AI推奨度』を満たすレースが過去データ内に存在しませんでした。基準を少し下げて再挑戦してください。")
         else:
             st.info("⚪ 検証を開始するには、同じ月の『race.zip』と『odds.zip』の両方を放り込んでください。")
-            send_horse_line(line_msg)
