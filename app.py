@@ -22,7 +22,7 @@ st.markdown("""
     h3 { color: #2e7d32 !important; border-left: 6px solid #2e7d32; padding-left: 10px; font-weight: bold !important; }
     .stTable table { color: #000000 !important; background-color: #ffffff !important; }
     .stTable th { background-color: #1b5e20 !important; color: #ffffff !important; text-align: center !important; }
-    .stTable td { text-align: center !important; font-weight: bold !important; color: #000000 !important; }
+    .stTable td { text-align: center !important; font-weight: bold !important; color: #000000 !important; white-space: pre-wrap !important; }
     p, span, label { color: #111111 !important; font-weight: bold !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -88,41 +88,77 @@ def calc_ai_score(row):
         return 70
 
 # ==========================================
-# 📂 3. ZIP/CSV一括全自動読み込み関数
+# 🔍 3. リアルタイム・ワイドオッズ抽出関数
 # ==========================================
-def load_horselist_files(uploaded_files):
-    dfs = []
-    for f in uploaded_files:
-        if f.name.lower().endswith('.zip'):
-            with zipfile.ZipFile(f) as z:
-                for name in z.namelist():
-                    if "horselist" in name.lower():
-                        dfs.append(pd.read_csv(z.open(name)))
-        elif "horselist" in f.name.lower():
-            dfs.append(pd.read_csv(f))
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
-    return None
+def get_wide_odds_float(df_odds, track, race, horse_a, horse_b, date=None):
+    if df_odds is None or df_odds.empty:
+        return 0.0
+    try:
+        b1 = min(int(float(horse_a)), int(float(horse_b)))
+        b2 = max(int(float(horse_a)), int(float(horse_b)))
+        cond = (df_odds["競馬場"] == track) & \
+               (df_odds["レース番号"] == int(float(race))) & \
+               (df_odds["賭式"] == "ワイド") & \
+               (df_odds["番号1"] == b1) & \
+               (df_odds["番号2"] == b2)
+               
+        if date is not None and "競走年月日" in df_odds.columns:
+            cond = cond & (df_odds["競走年月日"] == date)
+        df_w = df_odds[cond]
+        if not df_w.empty:
+            return float(df_w.iloc[0]["オッズ"])
+    except:
+        pass
+    return 0.0
 
 # ==========================================
-# ⚙️ 4. 作戦司令パネル（サイドバー）
+# 📂 4. 当日ファイル（馬 ＆ オッズ）自動仕分け読み込み関数
+# ==========================================
+def load_all_dropped_files(uploaded_files):
+    df_horse_list = []
+    df_odds_list = []
+    for f in uploaded_files:
+        name_lower = f.name.lower()
+        if name_lower.endswith('.zip'):
+            with zipfile.ZipFile(f) as z:
+                for name in z.namelist():
+                    n_lower = name.lower()
+                    if "horselist" in n_lower:
+                        df_horse_list.append(pd.read_csv(z.open(name)))
+                    elif "odds" in n_lower:
+                        df_odds_list.append(pd.read_csv(z.open(name)))
+        else:
+            if "horselist" in name_lower:
+                df_horse_list.append(pd.read_csv(f))
+            elif "odds" in name_lower:
+                df_odds_list.append(pd.read_csv(f))
+                
+    df_h = pd.concat(df_horse_list, ignore_index=True) if df_horse_list else None
+    df_o = pd.concat(df_odds_list, ignore_index=True) if df_odds_list else None
+    return df_h, df_o
+
+# ==========================================
+# ⚙️ 5. 作戦司令パネル（サイドバー）
 # ==========================================
 st.sidebar.markdown("### ⚙️ 作戦司令パネル")
 mode = st.sidebar.radio("🔥 モードを選択せよ！", ["📊 過去レース勝因分析（オッズ不要）", "🔮 未来レース一発予想"])
 
 st.sidebar.markdown("---")
-# 🚨 大将軍の戦略：AIの自信度でレース自体を厳選し、勝率90%を狙うスライダー
 min_ai_score = st.sidebar.slider("🚨 AI自信度でレースを厳選（勝率90%超へ）", min_value=70, max_value=95, value=80, step=1)
 
-uploaded_files = st.file_uploader("📋 horselistのZIPまたはCSVファイルをここにドロップ！", type=["csv", "zip"], accept_multiple_files=True)
+st.sidebar.markdown("---")
+# 🚨 資金配分用の総予算カスタム
+total_budget_per_race = st.sidebar.number_input("💵 1レースあたりの総投資予算（円）", min_value=300, max_value=5000, value=900, step=100)
+
+uploaded_files = st.file_uploader("📋 ファイルをまとめてここにドロップ！（ZIPのままでOK）", type=["csv", "zip"], accept_multiple_files=True)
 
 # ==========================================
-# 📊 5. メインルーチン
+# 📊 6. メインルーチン
 # ==========================================
 if uploaded_files:
-    df_master = load_horselist_files(uploaded_files)
+    df_master, df_odds_master = load_all_dropped_files(uploaded_files)
     if df_master is not None:
-        st.success("🟢 索敵成功！馬データを読み込みました。")
+        st.success("🟢 索敵成功！データを読み込みました。")
         
         df_master["AIスコア"] = df_master.apply(calc_ai_score, axis=1)
 
@@ -146,7 +182,6 @@ if uploaded_files:
                         if len(group) >= 3:
                             top3_ai = group.sort_values(by="AIスコア", ascending=False).head(3)
                             
-                            # 🚨 厳選フィルターの適用（過去検証）
                             if top3_ai.iloc[0]["AIスコア"] < min_ai_score:
                                 continue
                                 
@@ -173,10 +208,10 @@ if uploaded_files:
                 st.warning("⚠️ データに「着順」カラムがありません。")
 
         # ------------------------------------------
-        # 【B】未来レース一発予想モード
+        # 【B】未来レース一発予想モード（完全自動資金配分合流）
         # ------------------------------------------
         elif mode == "🔮 未来レース一発予想":
-            st.subheader("🔮 次回開催レースのAI自動索敵・本命3頭")
+            st.subheader("🔮 次回開催レースのAI自動索敵・ガミり防止購入指示書")
             
             predict_results = []
             group_cols = ["競馬場", "レース番号"]
@@ -194,37 +229,62 @@ if uploaded_files:
                 if len(group) >= 3:
                     top3 = group.sort_values(by="AIスコア", ascending=False).head(3)
                     
-                    # 🚨 大将軍の戦略：大本命馬のスコアが基準未満ならレースごと非表示！
+                    # 厳選フィルター
                     if top3.iloc[0]["AIスコア"] < min_ai_score:
                         continue
 
-                    h_list = []
-                    for _, row in top3.iterrows():
-                        try:
-                            b_num = int(float(row.get("馬番", 0)))
-                        except:
-                            b_num = row.get("馬番", 0)
-                        h_list.append(f"{b_num}番({row.get('馬名', '')})")
-                    horses_str = " , ".join(h_list)
+                    n1, n2, n3 = top3.iloc[0]['馬番'], top3.iloc[1]['馬番'], top3.iloc[2]['馬番']
                     
                     if len(group_cols) == 3:
                         track_val, date_val, r_val = keys
                         race_name = f"{date_val} {track_val} {r_val}R"
+                        odds12 = get_wide_odds_float(df_odds_master, track_val, r_val, n1, n2, date=date_val)
+                        odds13 = get_wide_odds_float(df_odds_master, track_val, r_val, n1, n3, date=date_val)
+                        odds23 = get_wide_odds_float(df_odds_master, track_val, r_val, n2, n3, date=date_val)
                     else:
                         track_val, r_val = keys
                         race_name = f"{track_val} {r_val}R"
+                        odds12 = get_wide_odds_float(df_odds_master, track_val, r_val, n1, n2)
+                        odds13 = get_wide_odds_float(df_odds_master, track_val, r_val, n1, n3)
+                        odds23 = get_wide_odds_float(df_odds_master, track_val, r_val, n2, n3)
+
+                    # 🚨 傾斜配分の自動計算
+                    amt12, amt13, amt23 = 100, 100, 100
+                    if odds12 > 0.0 and odds13 > 0.0 and odds23 > 0.0:
+                        try:
+                            inv12 = 1.0 / odds12
+                            inv13 = 1.0 / odds13
+                            inv23 = 1.0 / odds23
+                            sum_inv = inv12 + inv13 + inv23
+                            amt12 = max(100, int(round((total_budget_per_race * inv12 / sum_inv) / 100) * 100))
+                            amt13 = max(100, int(round((total_budget_per_race * inv13 / sum_inv) / 100) * 100))
+                            amt23 = max(100, int(round((total_budget_per_race * inv23 / sum_inv) / 100) * 100))
+                        except:
+                            pass
+                            
+                    # 買い目文字列の生成
+                    n1_i, n2_i, n3_i = int(float(n1)), int(float(n2)), int(float(n3))
+                    if odds12 > 0.0:
+                        str12 = f"① {n1_i}-{n2_i} [{odds12}倍] ➡️ 【{amt12}円】"
+                        str13 = f"② {n1_i}-{n3_i} [{odds13}倍] ➡️ 【{amt13}円】"
+                        str23 = f"③ {n2_i}-{n3_i} [{odds23}倍] ➡️ 【{amt23}円】"
+                    else:
+                        str12 = f"① {n1_i}-{n2_i} ➡️ 【100円】(オッズ未読込)"
+                        str13 = f"① {n1_i}-{n3_i} ➡️ 【100円】(オッズ未読込)"
+                        str23 = f"② {n2_i}-{n3_i} ➡️ 【100円】(オッズ未読込)"
                         
-                    # 画面表示用に1番手のスコアをちょっと添える
+                    combos_rich_str = f"{str12}\n{str13}\n{str23}"
                     b_score = top3.iloc[0]["AIスコア"]
+                    
                     predict_results.append({
                         "対象レース": race_name, 
-                        "AI推奨馬上位3頭": horses_str,
+                        "ワイド3点・ガミり防止購入指示（推奨額）": combos_rich_str,
                         "大本命の自信度": f"{b_score}点"
                     })
                     
             if predict_results:
                 st.table(pd.DataFrame(predict_results))
             else:
-                st.info("🔮 条件を満たす厳選レースがありません。スライダーの数値を少し下げてみてください。")
+                st.info("🔮 条件を満たす厳選レースがありません。")
 else:
-    st.info("⚪ 準備完了。`horselist` ファイルを上にドロップしてください。")
+    st.info("⚪ 準備完了。ファイルをまとめて上にドロップしてください。")
