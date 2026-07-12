@@ -7,7 +7,7 @@ import re
 # 1. 画面の基本設定（顔）
 # ==========================================
 st.set_page_config(page_title="大将軍の要塞 V2", layout="wide")
-st.title("🏯 大将軍の要塞 V2 (期待値スキャナー搭載)")
+st.title("🏯 大将軍の要塞 V2 (魔改造エンジン搭載)")
 st.write("競馬場適性・騎手成績・枠順の隠しパラメーターを搭載した最新エンジンです。")
 
 # ==========================================
@@ -71,8 +71,19 @@ def calc_ai_score_v2(row):
 horse_file = st.file_uploader("出馬表データ (horselist.csv) をアップロードしてください", type=["csv"])
 
 if horse_file is not None:
-    # データの読み込み
-    df = pd.read_csv(horse_file)
+    # --- 修正箇所：文字化け(エンコード)対策 ---
+    try:
+        # まずは地方競馬特有の「Shift-JIS」で読み込みトライ！
+        df = pd.read_csv(horse_file, encoding="shift_jis")
+    except UnicodeDecodeError:
+        try:
+            # ダメなら標準の「UTF-8」で読み込みトライ！
+            horse_file.seek(0)
+            df = pd.read_csv(horse_file, encoding="utf-8")
+        except Exception as e:
+            st.error(f"ファイルの読み込みに失敗しました。データを確認してください: {e}")
+            st.stop()
+    # ----------------------------------------
     
     # 新エンジンでスコア計算！
     df["AIスコア_V2"] = df.apply(calc_ai_score_v2, axis=1)
