@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import zipfile
 
 # ==========================================
 # 1. 画面の基本設定（顔）
@@ -67,35 +68,49 @@ def calc_ai_score_v2(row):
 # ==========================================
 # 3. 画面の操作とデータ表示（顔）
 # ==========================================
-# ファイルアップロード
-horse_file = st.file_uploader("出馬表データ (horselist.csv) をアップロードしてください", type=["csv"])
+# 複数ファイル・ZIPファイルのドロップに対応！
+uploaded_files = st.file_uploader(
+    "出馬表データ（race.zip）をアップロードしてください", 
+    type=["zip", "csv"], 
+    accept_multiple_files=True
+)
 
-if horse_file is not None:
-    # --- 修正箇所：文字化け(エンコード)対策 ---
-    try:
-        # まずは地方競馬特有の「Shift-JIS」で読み込みトライ！
-        df = pd.read_csv(horse_file, encoding="shift_jis")
-    except UnicodeDecodeError:
-        try:
-            # ダメなら標準の「UTF-8」で読み込みトライ！
-            horse_file.seek(0)
-            df = pd.read_csv(horse_file, encoding="utf-8")
-        except Exception as e:
-            st.error(f"ファイルの読み込みに失敗しました。データを確認してください: {e}")
-            st.stop()
-    # ----------------------------------------
+if uploaded_files:
+    df_horse = None
     
-    # 新エンジンでスコア計算！
-    df["AIスコア_V2"] = df.apply(calc_ai_score_v2, axis=1)
-    
-    # 画面に表示する列を絞り込む
-    display_cols = ["競馬場", "レース番号", "枠番", "馬番", "馬名", "騎手名", "人気", "AIスコア_V2"]
-    # CSVに存在している列だけを選択（エラー防止）
-    display_cols = [c for c in display_cols if c in df.columns]
-    
-    st.subheader("📊 解析結果 (V2エンジン)")
-    st.dataframe(
-        df[display_cols].sort_values(by=["競馬場", "レース番号", "AIスコア_V2"], ascending=[True, True, False]),
-        use_container_width=True,
-        height=600
-    )
+    # アップロードされたファイルを一つずつ確認
+    for file in uploaded_files:
+        if file.name.endswith('.zip'):
+            # ZIPファイルなら中身を開けて horselist.csv を探す
+            with zipfile.ZipFile(file, 'r') as z:
+                for filename in z.namelist():
+                    if "horselist.csv" in filename:
+                        with z.open(filename) as f:
+                            try:
+                                df_horse = pd.read_csv(f, encoding="shift_jis")
+                            except:
+                                f.seek(0)
+                                df_horse = pd.read_csv(f, encoding="utf-8")
+        elif "horselist.csv" in file.name:
+            # 直接CSVが入れられた場合
+            try:
+                df_horse = pd.read_csv(file, encoding="shift_jis")
+            except:
+                file.seek(0)
+                df_horse = pd.read_csv(file, encoding="utf-8")
+
+    # horselist.csv が無事に見つかったら解析スタート！
+    if df_horse is not None:
+        df_horse["AIスコア_V2"] = df_horse.apply(calc_ai_score_v2, axis=1)
+        
+        display_cols = ["競馬場", "レース番号", "枠番", "馬番", "馬名", "騎手名", "人気", "AIスコア_V2"]
+        display_cols = [c for c in display_cols if c in df_horse.columns]
+        
+        st.subheader("📊 解析結果 (V2エンジン)")
+        st.dataframe(
+            df_horse[display_cols].sort_values(by=["競馬場", "レース番号", "AIスコア_V2"], ascending=[True, True, False]),
+            use_container_width=True,
+            height=600
+        )
+    else:
+        st.warning("アップロードされたファイルの中に 'horselist.csv' が見つかりませんでした。")
