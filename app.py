@@ -13,6 +13,16 @@ st.set_page_config(page_title="大将軍の要塞 V2 (最終形態)", layout="wi
 st.title("🏯 大将軍の要塞 V2 (期待値スキャナー搭載)")
 st.write("出馬表とオッズを合体させ、「期待値100%を超える買い目」だけをスナイプする最終兵器です。")
 
+# 📂 サイドバーに「フォーカス機能」を配備！
+st.sidebar.header("🎯 スナイプ厳選フィルター")
+min_score_filter = st.sidebar.slider(
+    "🔥 最低AIスコアの足切りライン", 
+    min_value=50, 
+    max_value=99, 
+    value=80,
+    help="ここで設定したスコア未満の『自信のない混戦レース』を画面から一瞬で消し去ります。"
+)
+
 # ==========================================
 # 2. V2エンジン（隠しパラメーター搭載AI）
 # ==========================================
@@ -57,7 +67,7 @@ def calc_ai_score_v2(row):
     return max(35, min(99, int(score)))
 
 # ==========================================
-# 3. ファイル読み込み関数（ZIP対応の鉄壁仕様）
+# 3. ファイル読み込み関数
 # ==========================================
 def load_csv_from_upload(uploaded_files, target_keyword):
     df_list = []
@@ -84,7 +94,7 @@ def load_csv_from_upload(uploaded_files, target_keyword):
     return None
 
 # ==========================================
-# 4. メイン画面（スキャナー発動！）
+# 4. メイン画面
 # ==========================================
 uploaded_files = st.file_uploader(
     "📂 【race.zip】 と 【odds.zip】 をまとめてドロップしてください！", 
@@ -96,12 +106,10 @@ if uploaded_files:
     df_horse = load_csv_from_upload(uploaded_files, "horselist")
     
     if df_horse is not None:
-        # AIスコア計算
         df_horse["AIスコア_V2"] = df_horse.apply(calc_ai_score_v2, axis=1)
         
-        st.success("✅ 出馬表データの解析完了！極秘パラメーターによるスコアを算出しました！")
+        st.success("✅ 出馬表データの解析完了！")
         
-        # レースごとに上位3頭を抽出して買い目（ワイド）を作成
         target_buys = []
         grouped = df_horse.groupby(["競馬場", "レース番号"])
         
@@ -112,7 +120,10 @@ if uploaded_files:
                 scores = top3["AIスコア_V2"].tolist()
                 max_score = scores[0]
                 
-                # 過去の実戦データから弾き出した「本当のワイド的中率」
+                # 🎯【追加】AI最高点が大将軍の設定した足切りライン未満なら、そのレースは非表示！
+                if max_score < min_score_filter:
+                    continue
+                
                 if max_score >= 95:
                     win_rate = 0.58
                 elif max_score >= 90:
@@ -120,10 +131,8 @@ if uploaded_files:
                 else:
                     win_rate = 0.20
                 
-                # 期待値100%を超えるための「最低オッズ（ボーダーライン）」
                 target_odds = round(1.0 / win_rate, 1) if win_rate > 0 else 99.9
                 
-                # 3頭からワイドの3点買い目（組み合わせ）を作成
                 combos = list(itertools.combinations(horses, 2))
                 for combo in combos:
                     target_buys.append({
@@ -135,21 +144,16 @@ if uploaded_files:
                         "🔥 必勝ボーダーライン": f"オッズ 【 {target_odds}倍 】 以上なら買い！"
                     })
         
-        df_buys = pd.DataFrame(target_buys)
-        
-        st.subheader("🎯 期待値スナイプ指示書 (ワイド3点買い用)")
-        st.write("AIが選んだ最強の組み合わせです。**右端の「必勝ボーダーライン」のオッズを実際のオッズが超えていれば、迷わず資金をブチ込んでください！**")
-        
-        # 画面に美しく表示
-        st.dataframe(df_buys, use_container_width=True, height=500)
+        if target_buys:
+            df_buys = pd.DataFrame(target_buys)
+            st.subheader(f"🎯 期待値スナイプ指示書 (AIスコア {min_score_filter}点以上限定)")
+            st.write(f"現在、全 {len(df_buys)} 通りに絞り込まれています。")
+            st.dataframe(df_buys, use_container_width=True, height=500)
+        else:
+            st.warning(f"現在、AIスコアが {min_score_filter}点 以上のレースはありません。フィルターを下げてみてください。")
         
         with st.expander("📝 オッズデータ (odds) の中身を確認する（開発者用）"):
             df_odds = load_csv_from_upload(uploaded_files, "odds")
             if df_odds is not None:
-                st.write("オッズデータを読み込みました！（※現在、構造解析中です）")
+                st.write("オッズデータを読み込みました！")
                 st.dataframe(df_odds.head(10))
-            else:
-                st.write("オッズデータはアップロードされていません。")
-                
-    else:
-        st.warning("アップロードされたファイルの中に 'horselist.csv' が見つかりませんでした。")
